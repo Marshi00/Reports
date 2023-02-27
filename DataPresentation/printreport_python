@@ -1,0 +1,63 @@
+import os
+import subprocess
+import win32com.client
+
+# set up some constants
+TIMEOUT = 1700 # timeout in seconds for printing report
+PRIORITY = 16384 # lower priority
+REPORT_MDB = "DataPresentation_summary"
+PRINT_SUBROUTINE = "AutoPrintReport_DailySummary"
+
+# create a file system object for file manipulation
+fso = win32com.client.Dispatch("Scripting.FileSystemObject")
+
+# get the program directory
+strProjectFolder = os.path.abspath(".") + "\\"
+
+# check for existence of other VB script to kill a process
+# if it doesn't exist, pop up message and abort
+strFile = strProjectFolder + "Kill.vbs"
+if not fso.FileExists(strFile):
+    print("not found", strFile, "--- aborting")
+    exit()
+
+# check for existence of other VB script to lower the priority of a process
+# if it doesn't exist, pop up message and abort
+strFile = strProjectFolder + "SetPrio.vbs"
+if not fso.FileExists(strFile):
+    print(strFile, "not found --- aborting")
+    exit()
+
+# check for existence of collection database
+# if it doesn't exist, pop up message and abort
+strFile = strProjectFolder + REPORT_MDB + ".mde"
+if not fso.FileExists(strFile):
+    strFile = strProjectFolder + REPORT_MDB + ".mdb"
+    if not fso.FileExists(strFile):
+        print(strFile, "not found --- aborting")
+        exit()
+
+# finished with fso
+fso = None
+
+# make an access instance and load the report presentation database
+accessObj = win32com.client.Dispatch("Access.Application")
+accessObj.OpenCurrentDatabase(strFile)
+
+# get the process id of access
+accessObj.Run("GetProcId", ProcID)
+
+# shell a vb script to kill the access object after a time
+killObj = subprocess.Popen(['wscript', strProjectFolder + "Kill.vbs", str(ProcID), str(TIMEOUT)], shell=True)
+
+# tell access to read the data then quit
+accessObj.Run(PRINT_SUBROUTINE)
+
+# if the access object was killed, let the user know
+try:
+    accessObj.CloseCurrentDatabase()
+    accessObj = None
+    killObj.kill()
+    print("Process", ProcID, "- Killed")
+except Exception as e:
+    print(str(e))
